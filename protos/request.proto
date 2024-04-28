@@ -1,0 +1,12 @@
+syntax="proto3";
+
+package request;
+
+option go_package = "./protos";
+
+message request {
+      string id  = 1;
+      string name = 2;
+      string arg1  = 3;
+      string arg2  = 4;
+}

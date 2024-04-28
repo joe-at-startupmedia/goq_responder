@@ -1,0 +1,12 @@
+syntax="proto3";
+
+package cmd_resp;
+
+option go_package = "example/protobuf/protos";
+
+message CmdResp {
+      string id  = 1;
+      string name = 2;
+      string value_str  = 3;
+      string error = 4;
+}

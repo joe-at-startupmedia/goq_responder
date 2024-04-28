@@ -1,0 +1,12 @@
+syntax="proto3";
+
+package response;
+
+option go_package = "./protos";
+
+message Response {
+      string request_id  = 1;
+      string name = 2;
+      string value_str  = 3;
+      string error = 4;
+}
