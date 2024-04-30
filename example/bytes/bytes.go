@@ -3,13 +3,18 @@ package main
 import (
 	"fmt"
 	"github.com/joe-at-startupmedia/goq_responder"
-	"github.com/joe-at-startupmedia/posix_mq"
 	"log"
 	"time"
 )
 
 const maxRequestTickNum = 10
 const queue_name = "goqr_example_bytes"
+
+var mqr *goq_responder.MqResponder
+var mqs *goq_responder.MqRequester
+var config = goq_responder.QueueConfig{
+	Name: queue_name,
+}
 
 func main() {
 	resp_c := make(chan int)
@@ -20,20 +25,20 @@ func main() {
 	go requester(request_c)
 	<-resp_c
 	<-request_c
+
+	goq_responder.CloseRequester(mqs)
+	goq_responder.CloseResponder(mqr)
 	//gives time for deferred functions to complete
 	time.Sleep(2 * time.Second)
 }
 
 func responder(c chan int) {
 
-	config := goq_responder.QueueConfig{
-		Name:  queue_name,
-		Flags: posix_mq.O_RDWR | posix_mq.O_CREAT,
-	}
-	mqr := goq_responder.NewResponder(&config, nil)
+	mqr = goq_responder.NewResponder(&config)
+	time.Sleep(5 * time.Second)
+
 	defer func() {
-		goq_responder.UnlinkResponder(mqr)
-		fmt.Println("Responder: finished and unlinked")
+		log.Println("Responder: finished")
 		c <- 0
 	}()
 	if mqr.HasErrors() {
@@ -44,62 +49,75 @@ func responder(c chan int) {
 
 	count := 0
 	for {
+
 		time.Sleep(1 * time.Second)
 		count++
-		if err := mqr.HandleRequest(handleMessage); err != nil {
-			fmt.Printf("Responder: error handling request: %s\n", err)
-			continue
-		}
 
-		fmt.Println("Responder: Sent a response")
+		if err := mqr.HandleRequest(handleMessage); err != nil {
+			log.Printf("Responder: error handling request: %s\n", err)
+		} else {
+			log.Printf("Processed response")
+		}
 
 		if count >= maxRequestTickNum {
 			break
 		}
+
 	}
+
 }
 
 func requester(c chan int) {
 
-	mqs := goq_responder.NewRequester(&goq_responder.QueueConfig{
-		Name: queue_name,
-	}, nil)
+	mqs = goq_responder.NewRequester(&config)
+
 	defer func() {
-		goq_responder.CloseRequester(mqs)
-		fmt.Println("Requester: finished and closed")
+		log.Println("Requester: finished and closed")
 		c <- 0
 	}()
+
+	mqr.StartClient(&config)
+	mqs.StartClient(&config)
+	time.Sleep(5 * time.Second)
+
 	if mqs.HasErrors() {
 		log.Printf("Requester: could not initialize: %s", mqs.Error())
+		c <- 1
+		return
+	}
+	if mqr.HasErrors() {
+		log.Printf("Responder: could not initialize: %s", mqr.Error())
 		c <- 1
 		return
 	}
 
 	count := 0
 	for {
+
 		count++
+
 		request := fmt.Sprintf("Hello, World : %d\n", count)
 		if err := mqs.Request([]byte(request), 0); err != nil {
-			fmt.Printf("Requester: error requesting request: %s\n", err)
+			log.Printf("Requester: error requesting request: %s\n", err)
 			continue
 		}
 
-		fmt.Printf("Requester: sent a new request: %s", request)
+		log.Printf("Requester: sent a new request: %s", request)
 
 		msg, _, err := mqs.WaitForResponse(time.Second)
 
 		if err != nil {
-			fmt.Printf("Requester: error getting response: %s\n", err)
+			log.Printf("Requester: error getting response: %s\n", err)
 			continue
 		}
 
-		fmt.Printf("Requester: got a response: %s\n", msg)
+		log.Printf("Requester: got a response: %s\n", msg)
+
+		time.Sleep(1 * time.Second)
 
 		if count >= maxRequestTickNum {
 			break
 		}
-
-		time.Sleep(1 * time.Second)
 	}
 }
 

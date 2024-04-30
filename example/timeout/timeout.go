@@ -5,13 +5,17 @@ import (
 	"github.com/joe-at-startupmedia/goq_responder"
 	"log"
 	"time"
-
-	"github.com/joe-at-startupmedia/posix_mq"
 )
 
 const maxRequestTickNum = 10
 
 const queue_name = "goqr_example_timeout"
+
+var mqr *goq_responder.MqResponder
+var mqs *goq_responder.MqRequester
+var config = goq_responder.QueueConfig{
+	Name: queue_name,
+}
 
 func main() {
 	resp_c := make(chan int)
@@ -22,19 +26,20 @@ func main() {
 	go requester(request_c)
 	<-resp_c
 	<-request_c
+
+	goq_responder.CloseResponder(mqr)
+	goq_responder.CloseRequester(mqs)
 	//gives time for deferred functions to complete
 	time.Sleep(2 * time.Second)
 }
 
 func responder(c chan int) {
-	config := goq_responder.QueueConfig{
-		Name:  queue_name,
-		Flags: posix_mq.O_RDWR | posix_mq.O_CREAT,
-	}
-	mqr := goq_responder.NewResponder(&config, nil)
+
+	mqr = goq_responder.NewResponder(&config)
+	time.Sleep(5 * time.Second)
+
 	defer func() {
-		goq_responder.UnlinkResponder(mqr)
-		fmt.Println("Responder: finished and unlinked")
+		log.Println("Responder: finished")
 		c <- 0
 	}()
 	if mqr.HasErrors() {
@@ -55,11 +60,11 @@ func responder(c chan int) {
 		}
 
 		if err != nil {
-			fmt.Printf("Responder: error handling request: %s\n", err)
+			log.Printf("Responder: error handling request: %s\n", err)
 			continue
 		}
 
-		fmt.Println("Responder: Sent a response")
+		log.Println("Responder: Sent a response")
 
 		if count >= maxRequestTickNum {
 			break
@@ -69,16 +74,23 @@ func responder(c chan int) {
 
 func requester(c chan int) {
 
-	mqs := goq_responder.NewRequester(&goq_responder.QueueConfig{
-		Name: queue_name,
-	}, nil)
+	mqs = goq_responder.NewRequester(&config)
 	defer func() {
-		goq_responder.CloseRequester(mqs)
-		fmt.Println("Requester: finished and closed")
+		log.Println("Requester: finished and closed")
 		c <- 0
 	}()
+
+	mqr.StartClient(&config)
+	mqs.StartClient(&config)
+	time.Sleep(5 * time.Second)
+
 	if mqs.HasErrors() {
 		log.Printf("Requester: could not initialize: %s", mqs.Error())
+		c <- 1
+		return
+	}
+	if mqr.HasErrors() {
+		log.Printf("Responder: could not initialize: %s", mqr.Error())
 		c <- 1
 		return
 	}
@@ -101,9 +113,9 @@ func requester(c chan int) {
 	for i := range result {
 		result[i] = <-ch
 		if result[i].status {
-			fmt.Println(result[i].response)
+			log.Println(result[i].response)
 		} else {
-			fmt.Printf("Requester: Got error: %s \n", result[i].response)
+			log.Printf("Requester: Got error: %s \n", result[i].response)
 		}
 	}
 }
@@ -113,7 +125,7 @@ func requestResponse(mqs *goq_responder.MqRequester, msg string, c chan goqRespo
 		c <- goqResponse{fmt.Sprintf("%s", err), false}
 		return
 	}
-	fmt.Printf("Requester: sent a new request: %s", msg)
+	log.Printf("Requester: sent a new request: %s", msg)
 
 	resp, _, err := mqs.WaitForResponse(time.Second)
 

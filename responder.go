@@ -1,13 +1,13 @@
 package goq_responder
 
 import (
-	"errors"
 	"fmt"
-	"github.com/joe-at-startupmedia/goq_responder/protos"
-	"github.com/joe-at-startupmedia/posix_mq"
-	"google.golang.org/protobuf/proto"
-	"syscall"
+	ipc "github.com/joe-at-startupmedia/golang-ipc"
+	"log"
 	"time"
+
+	"github.com/joe-at-startupmedia/goq_responder/protos"
+	"google.golang.org/protobuf/proto"
 )
 
 type ResponderCallback func(msq []byte) (processed []byte, err error)
@@ -16,30 +16,44 @@ type ResponderMqRequestCallback func(mqs *MqRequest) (mqr *MqResponse, err error
 
 type ResponderFromProtoMessageCallback func() (processed []byte, err error)
 
-type MqResponder BidirectionalQueue
+type MqResponder struct {
+	MqRqst  *ipc.Server
+	ErrRqst error
+	MqResp  *ipc.Client
+	ErrResp error
+}
 
-func NewResponder(config *QueueConfig, owner *Ownership) *MqResponder {
+func NewResponder(config *QueueConfig) *MqResponder {
 
-	requester, errRqst := openQueueForResponder(config, owner, "rqst")
-
-	responder, errResp := openQueueForResponder(config, owner, "resp")
+	requester, errRqst := ipc.StartServer(fmt.Sprintf("%s_rqst", config.Name), nil)
 
 	mqr := MqResponder{
 		requester,
 		errRqst,
-		responder,
-		errResp,
+		&ipc.Client{Name: ""},
+		nil,
 	}
 
 	return &mqr
 }
 
-func openQueueForResponder(config *QueueConfig, owner *Ownership, postfix string) (*posix_mq.MessageQueue, error) {
+func (mqr *MqResponder) StartClient(config *QueueConfig) *MqResponder {
+	responder, errResp := ipc.StartClient(fmt.Sprintf("%s_resp", config.Name), nil)
 
-	if config.Flags == 0 {
-		config.Flags = O_RDWR | O_CREAT | O_NONBLOCK
-	}
-	return NewMessageQueueWithOwnership(*config, owner, postfix)
+	go func() {
+		msg, err := responder.Read()
+		if msg.MsgType == -1 {
+			log.Println("MqResponder.StartClient status: ", responder.Status())
+		}
+		if err != nil {
+			log.Println(fmt.Errorf("MqResponder.StartClient err: %w", err))
+		}
+	}()
+
+	mqr.MqResp = responder
+	mqr.ErrResp = errResp
+
+	return mqr
 }
 
 // HandleMqRequest provides a concrete implementation of HandleRequestFromProto using the local MqRequest type
@@ -66,27 +80,30 @@ func (mqr *MqResponder) HandleMqRequest(requestProcessor ResponderMqRequestCallb
 
 // HandleRequestFromProto used to process arbitrary protobuf messages using a callback
 func (mqr *MqResponder) HandleRequestFromProto(protocMsg proto.Message, msgHandler ResponderFromProtoMessageCallback) error {
-	msg, _, err := mqr.MqRqst.Receive()
+
+	msg, err := mqr.MqRqst.Read()
+
 	if err != nil {
-		//EAGAIN simply means the queue is empty when O_NONBLOCK is set
-		mqrAttr, _ := mqr.MqRqst.GetAttr()
-		if mqrAttr != nil && (mqrAttr.Flags&O_NONBLOCK == O_NONBLOCK) && errors.Is(err, syscall.EAGAIN) {
-			return nil
+		return err
+	}
+
+	if msg.MsgType < 1 {
+		time.Sleep(REQUEST_REURSION_WAITTIME * time.Second)
+		return mqr.HandleRequestFromProto(protocMsg, msgHandler)
+	} else {
+
+		err = proto.Unmarshal(msg.Data, protocMsg)
+		if err != nil {
+			return fmt.Errorf("unmarshaling error: %w", err)
 		}
-		return err
-	}
 
-	err = proto.Unmarshal(msg, protocMsg)
-	if err != nil {
-		return fmt.Errorf("unmarshaling error: %w", err)
-	}
+		processed, err := msgHandler()
+		if err != nil {
+			return err
+		}
 
-	processed, err := msgHandler()
-	if err != nil {
-		return err
+		return mqr.MqResp.Write(DEFAULT_MSG_TYPE, processed)
 	}
-
-	return mqr.MqResp.Send(processed, 0)
 }
 
 func (mqr *MqResponder) HandleRequest(msgHandler ResponderCallback) error {
@@ -99,54 +116,45 @@ func (mqr *MqResponder) HandleRequestWithLag(msgHandler ResponderCallback, lag i
 }
 
 func (mqr *MqResponder) handleRequest(msgHandler ResponderCallback, lag int) error {
-	msg, _, err := mqr.MqRqst.Receive()
+	msg, err := mqr.MqRqst.Read()
 	if err != nil {
-		//EAGAIN simply means the queue is empty when O_NONBLOCK is set
-		// @TODO detect if O_NONBLOCK was set
-		if errors.Is(err, syscall.EAGAIN) {
-			return nil
+		return err
+	}
+	if msg.MsgType < 1 {
+		time.Sleep(REQUEST_REURSION_WAITTIME * time.Second)
+		return mqr.handleRequest(msgHandler, lag)
+	} else {
+		processed, err := msgHandler(msg.Data)
+		if err != nil {
+			return err
 		}
+
+		if lag > 0 {
+			time.Sleep(time.Duration(lag) * time.Second)
+		}
+
+		err = mqr.MqResp.Write(DEFAULT_MSG_TYPE, processed)
 		return err
 	}
-	processed, err := msgHandler(msg)
-	if err != nil {
-		return err
-	}
-
-	if lag > 0 {
-		time.Sleep(time.Duration(lag) * time.Second)
-	}
-
-	err = mqr.MqResp.Send(processed, 0)
-	return err
 }
 
 func (mqr *MqResponder) CloseResponder() error {
-	return (*BidirectionalQueue)(mqr).Close()
-}
-
-func (mqr *MqResponder) UnlinkResponder() error {
-	return (*BidirectionalQueue)(mqr).Unlink()
+	mqr.MqRqst.Close()
+	mqr.MqResp.Close()
+	return nil
 }
 
 func (mqr *MqResponder) HasErrors() bool {
-	return (*BidirectionalQueue)(mqr).HasErrors()
+	return mqr.ErrResp != nil || mqr.ErrRqst != nil
 }
 
 func (mqr *MqResponder) Error() error {
-	return (*BidirectionalQueue)(mqr).Error()
+	return fmt.Errorf("responder: %w\nrequester: %w", mqr.ErrResp, mqr.ErrRqst)
 }
 
 func CloseResponder(mqr *MqResponder) error {
 	if mqr != nil {
 		return mqr.CloseResponder()
-	}
-	return fmt.Errorf("pointer reference is nil")
-}
-
-func UnlinkResponder(mqr *MqResponder) error {
-	if mqr != nil {
-		return mqr.UnlinkResponder()
 	}
 	return fmt.Errorf("pointer reference is nil")
 }

@@ -2,23 +2,26 @@ package goq_responder
 
 import (
 	"fmt"
+	ipc "github.com/joe-at-startupmedia/golang-ipc"
 	"github.com/joe-at-startupmedia/goq_responder/protos"
 	"google.golang.org/protobuf/proto"
+	"log"
 	"time"
-
-	"github.com/joe-at-startupmedia/posix_mq"
 )
 
-type MqRequester BidirectionalQueue
+type MqRequester struct {
+	MqRqst  *ipc.Client
+	ErrRqst error
+	MqResp  *ipc.Server
+	ErrResp error
+}
 
-func NewRequester(config *QueueConfig, owner *Ownership) *MqRequester {
-	requester, errRqst := openQueueForRequester(config, owner, "rqst")
-
-	responder, errResp := openQueueForRequester(config, owner, "resp")
+func NewRequester(config *QueueConfig) *MqRequester {
+	responder, errResp := ipc.StartServer(fmt.Sprintf("%s_resp", config.Name), nil)
 
 	mqs := MqRequester{
-		requester,
-		errRqst,
+		&ipc.Client{Name: ""},
+		nil,
 		responder,
 		errResp,
 	}
@@ -26,15 +29,28 @@ func NewRequester(config *QueueConfig, owner *Ownership) *MqRequester {
 	return &mqs
 }
 
-func openQueueForRequester(config *QueueConfig, owner *Ownership, postfix string) (*posix_mq.MessageQueue, error) {
-	if config.Flags == 0 {
-		config.Flags = posix_mq.O_RDWR
-	}
-	return NewMessageQueueWithOwnership(*config, owner, postfix)
+func (mqs *MqRequester) StartClient(config *QueueConfig) *MqRequester {
+
+	requester, errRqst := ipc.StartClient(fmt.Sprintf("%s_rqst", config.Name), nil)
+
+	go func() {
+		msg, err := requester.Read()
+		if msg.MsgType < 1 {
+			log.Println("MqRequest.StartClient status: ", requester.Status())
+		}
+		if err != nil {
+			log.Println(fmt.Errorf("Request.StartClients err: %w", err))
+		}
+	}()
+
+	mqs.MqRqst = requester
+	mqs.ErrRqst = errRqst
+
+	return mqs
 }
 
 func (mqs *MqRequester) Request(data []byte, priority uint) error {
-	return mqs.MqRqst.Send(data, priority)
+	return mqs.MqRqst.Write(DEFAULT_MSG_TYPE, data)
 }
 
 func (mqs *MqRequester) RequestUsingMqRequest(req *MqRequest, priority uint) error {
@@ -54,7 +70,13 @@ func (mqs *MqRequester) RequestUsingProto(req *proto.Message, priority uint) err
 }
 
 func (mqs *MqRequester) WaitForResponse(duration time.Duration) ([]byte, uint, error) {
-	return mqs.MqResp.TimedReceive(duration)
+	msg, err := mqs.MqResp.Read()
+	if msg.MsgType < 1 {
+		time.Sleep(REQUEST_REURSION_WAITTIME * time.Second)
+		return mqs.WaitForResponse(duration)
+	} else {
+		return msg.Data, 0, err
+	}
 }
 
 func (mqs *MqRequester) WaitForMqResponse(duration time.Duration) (*MqResponse, uint, error) {
@@ -67,40 +89,36 @@ func (mqs *MqRequester) WaitForMqResponse(duration time.Duration) (*MqResponse, 
 }
 
 func (mqs *MqRequester) WaitForProto(pbm proto.Message, duration time.Duration) (*proto.Message, uint, error) {
-	data, prio, err := mqs.MqResp.TimedReceive(duration)
+	msg, err := mqs.MqResp.Read()
 	if err != nil {
 		return nil, 0, err
 	}
-	err = proto.Unmarshal(data, pbm)
-	return &pbm, prio, err
+	if msg.MsgType < 1 {
+		time.Sleep(REQUEST_REURSION_WAITTIME * time.Second)
+		return mqs.WaitForProto(pbm, duration)
+	} else {
+		err = proto.Unmarshal(msg.Data, pbm)
+		return &pbm, 0, err
+	}
 }
 
 func (mqs *MqRequester) CloseRequester() error {
-	return (*BidirectionalQueue)(mqs).Close()
+	mqs.MqRqst.Close()
+	mqs.MqResp.Close()
+	return nil
 }
 
-func (mqs *MqRequester) UnlinkRequester() error {
-	return (*BidirectionalQueue)(mqs).Unlink()
+func (mqs *MqRequester) HasErrors() bool {
+	return mqs.ErrResp != nil || mqs.ErrRqst != nil
 }
 
-func (mqr *MqRequester) HasErrors() bool {
-	return (*BidirectionalQueue)(mqr).HasErrors()
+func (mqs *MqRequester) Error() error {
+	return fmt.Errorf("responder: %w\nrequester: %w", mqs.ErrResp, mqs.ErrRqst)
 }
 
-func (mqr *MqRequester) Error() error {
-	return (*BidirectionalQueue)(mqr).Error()
-}
-
-func CloseRequester(mqr *MqRequester) error {
-	if mqr != nil {
-		return mqr.CloseRequester()
-	}
-	return fmt.Errorf("pointer reference is nil")
-}
-
-func UnlinkRequester(mqr *MqRequester) error {
-	if mqr != nil {
-		return mqr.UnlinkRequester()
+func CloseRequester(mqs *MqRequester) error {
+	if mqs != nil {
+		return mqs.CloseRequester()
 	}
 	return fmt.Errorf("pointer reference is nil")
 }
