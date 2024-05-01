@@ -5,7 +5,6 @@ import (
 	ipc "github.com/joe-at-startupmedia/golang-ipc"
 	"github.com/joe-at-startupmedia/goq_responder/protos"
 	"google.golang.org/protobuf/proto"
-	"log"
 	"time"
 )
 
@@ -16,6 +15,8 @@ type MqRequester struct {
 
 func NewRequester(config *QueueConfig) *MqRequester {
 
+	InitLogging()
+
 	requester, errRqst := ipc.StartClient(fmt.Sprintf("%s", config.Name), &ipc.ClientConfig{
 		Encryption: config.UseEncryption,
 	})
@@ -23,10 +24,10 @@ func NewRequester(config *QueueConfig) *MqRequester {
 	go func() {
 		msg, err := requester.Read()
 		if msg.MsgType < 1 {
-			log.Println("MqRequest.StartClient status: ", requester.Status())
+			Log.Debugf("MqRequest.StartClient status: %s", requester.Status())
 		}
 		if err != nil {
-			log.Println(fmt.Errorf("Request.StartClients err: %w", err))
+			Log.Errorf("Request.StartClients err: %s", err)
 		}
 	}()
 
@@ -96,23 +97,20 @@ func (mqs *MqRequester) WaitForProto(pbm proto.Message) (*proto.Message, uint, e
 // DO NOT USE: needs more testing and refectoring
 func (mqs *MqRequester) WaitForProtoTimed(pbm proto.Message, duration time.Duration) (*proto.Message, uint, error) {
 
-	log.Print("WaitForProtoTimed")
-
 	msgChan := make(chan *ipc.Message)
 	errorChan := make(chan error)
 	stop := make(chan int)
 
 	go func() {
 		for {
-			fmt.Println("block")
+			Log.Debugln("block")
 			select {
 			case <-time.After(time.Second * 5):
-				fmt.Println("unblock")
-				log.Print("timed out")
+				Log.Debugln("timed out")
 				err := fmt.Errorf("read operation timed out")
 				errorChan <- err
 			case <-stop:
-				fmt.Println("stopped")
+				Log.Debugln("stopped")
 				return
 			}
 		}
@@ -122,7 +120,7 @@ func (mqs *MqRequester) WaitForProtoTimed(pbm proto.Message, duration time.Durat
 		msg, err := mqs.MqRqst.Read()
 		stop <- 1
 		if err != nil {
-			log.Print("WaitForProtoTimed error", err)
+			Log.Debugf("WaitForProtoTimed error: %s", err)
 			errorChan <- err
 		} else {
 			msgChan <- msg
@@ -132,10 +130,10 @@ func (mqs *MqRequester) WaitForProtoTimed(pbm proto.Message, duration time.Durat
 	select {
 
 	case err := <-errorChan:
-		log.Print("WaitForProtoTimed errChan Met")
+		Log.Debugln("WaitForProtoTimed errChan Met")
 		return nil, 0, err
 	case msg := <-msgChan:
-		log.Print("msg Met", msg.Data)
+		Log.Debugf("msg Met: %s", msg.Data)
 		if msg.MsgType < 1 {
 			time.Sleep(REQUEST_REURSION_WAITTIME * time.Second)
 			return mqs.WaitForProto(pbm)

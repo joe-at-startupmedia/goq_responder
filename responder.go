@@ -3,7 +3,6 @@ package goq_responder
 import (
 	"fmt"
 	ipc "github.com/joe-at-startupmedia/golang-ipc"
-	"log"
 	"time"
 
 	"github.com/joe-at-startupmedia/goq_responder/protos"
@@ -23,6 +22,8 @@ type MqResponder struct {
 
 func NewResponder(config *QueueConfig) *MqResponder {
 
+	InitLogging()
+
 	responder, errResp := ipc.StartServer(fmt.Sprintf("%s", config.Name), &ipc.ServerConfig{
 		Encryption:        config.UseEncryption,
 		UnmaskPermissions: config.UnmaskPermissions,
@@ -31,10 +32,10 @@ func NewResponder(config *QueueConfig) *MqResponder {
 	go func() {
 		msg, err := responder.Read()
 		if msg.MsgType == -1 {
-			log.Println("MqResponder.StartClient status: ", responder.Status())
+			Log.Debugf("MqResponder.StartClient status: %s", responder.Status())
 		}
 		if err != nil {
-			log.Println(fmt.Errorf("MqResponder.StartClient err: %w", err))
+			Log.Errorf("MqResponder.StartClient err: %s", err)
 		}
 	}()
 
@@ -78,6 +79,7 @@ func (mqr *MqResponder) HandleRequestFromProto(protocMsg proto.Message, msgHandl
 	}
 
 	if msg.MsgType < 1 {
+		Log.Debugln("using recursion")
 		time.Sleep(REQUEST_REURSION_WAITTIME * time.Second)
 		return mqr.HandleRequestFromProto(protocMsg, msgHandler)
 	} else {
@@ -94,7 +96,7 @@ func (mqr *MqResponder) HandleRequestFromProto(protocMsg proto.Message, msgHandl
 
 		err = mqr.MqResp.Write(DEFAULT_MSG_TYPE, processed)
 		if err != nil && err.Error() == "Connecting" {
-			log.Println("Connecting error, reattempting")
+			Log.Infoln("Connecting error, reattempting")
 			time.Sleep(REQUEST_REURSION_WAITTIME * time.Second)
 			return mqr.MqResp.Write(DEFAULT_MSG_TYPE, processed)
 		} else {
@@ -118,6 +120,7 @@ func (mqr *MqResponder) handleRequest(msgHandler ResponderCallback, lag int) err
 		return err
 	}
 	if msg.MsgType < 1 {
+		Log.Debugln("using recursion")
 		time.Sleep(REQUEST_REURSION_WAITTIME * time.Second)
 		return mqr.handleRequest(msgHandler, lag)
 	} else {
