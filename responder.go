@@ -2,7 +2,7 @@ package goq_responder
 
 import (
 	"fmt"
-	ipc "github.com/james-barrow/golang-ipc"
+	ipc "github.com/joe-at-startupmedia/golang-ipc"
 	"log"
 	"time"
 

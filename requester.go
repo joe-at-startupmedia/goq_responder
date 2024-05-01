@@ -2,7 +2,7 @@ package goq_responder
 
 import (
 	"fmt"
-	ipc "github.com/james-barrow/golang-ipc"
+	ipc "github.com/joe-at-startupmedia/golang-ipc"
 	"github.com/joe-at-startupmedia/goq_responder/protos"
 	"google.golang.org/protobuf/proto"
 	"log"
