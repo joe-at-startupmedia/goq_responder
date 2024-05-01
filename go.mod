@@ -4,7 +4,7 @@ go 1.21
 
 require (
 	github.com/google/uuid v1.6.0
-	github.com/joe-at-startupmedia/golang-ipc v1.2.5
+	github.com/james-barrow/golang-ipc v1.2.4
 	google.golang.org/protobuf v1.33.0
 )
 

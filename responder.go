@@ -2,7 +2,7 @@ package goq_responder
 
 import (
 	"fmt"
-	ipc "github.com/joe-at-startupmedia/golang-ipc"
+	ipc "github.com/james-barrow/golang-ipc"
 	"log"
 	"time"
 
@@ -17,28 +17,16 @@ type ResponderMqRequestCallback func(mqs *MqRequest) (mqr *MqResponse, err error
 type ResponderFromProtoMessageCallback func() (processed []byte, err error)
 
 type MqResponder struct {
-	MqRqst  *ipc.Server
-	ErrRqst error
-	MqResp  *ipc.Client
+	MqResp  *ipc.Server
 	ErrResp error
 }
 
 func NewResponder(config *QueueConfig) *MqResponder {
 
-	requester, errRqst := ipc.StartServer(fmt.Sprintf("%s_rqst", config.Name), nil)
-
-	mqr := MqResponder{
-		requester,
-		errRqst,
-		&ipc.Client{Name: ""},
-		nil,
-	}
-
-	return &mqr
-}
-
-func (mqr *MqResponder) StartClient(config *QueueConfig) *MqResponder {
-	responder, errResp := ipc.StartClient(fmt.Sprintf("%s_resp", config.Name), nil)
+	responder, errResp := ipc.StartServer(fmt.Sprintf("%s", config.Name), &ipc.ServerConfig{
+		Encryption:        config.UseEncryption,
+		UnmaskPermissions: config.UnmaskPermissions,
+	})
 
 	go func() {
 		msg, err := responder.Read()
@@ -50,10 +38,12 @@ func (mqr *MqResponder) StartClient(config *QueueConfig) *MqResponder {
 		}
 	}()
 
-	mqr.MqResp = responder
-	mqr.ErrResp = errResp
+	mqr := MqResponder{
+		responder,
+		errResp,
+	}
 
-	return mqr
+	return &mqr
 }
 
 // HandleMqRequest provides a concrete implementation of HandleRequestFromProto using the local MqRequest type
@@ -81,7 +71,7 @@ func (mqr *MqResponder) HandleMqRequest(requestProcessor ResponderMqRequestCallb
 // HandleRequestFromProto used to process arbitrary protobuf messages using a callback
 func (mqr *MqResponder) HandleRequestFromProto(protocMsg proto.Message, msgHandler ResponderFromProtoMessageCallback) error {
 
-	msg, err := mqr.MqRqst.Read()
+	msg, err := mqr.MqResp.Read()
 
 	if err != nil {
 		return err
@@ -102,7 +92,14 @@ func (mqr *MqResponder) HandleRequestFromProto(protocMsg proto.Message, msgHandl
 			return err
 		}
 
-		return mqr.MqResp.Write(DEFAULT_MSG_TYPE, processed)
+		err = mqr.MqResp.Write(DEFAULT_MSG_TYPE, processed)
+		if err != nil && err.Error() == "Connecting" {
+			log.Println("Connecting error, reattempting")
+			time.Sleep(REQUEST_REURSION_WAITTIME * time.Second)
+			return mqr.MqResp.Write(DEFAULT_MSG_TYPE, processed)
+		} else {
+			return err
+		}
 	}
 }
 
@@ -116,7 +113,7 @@ func (mqr *MqResponder) HandleRequestWithLag(msgHandler ResponderCallback, lag i
 }
 
 func (mqr *MqResponder) handleRequest(msgHandler ResponderCallback, lag int) error {
-	msg, err := mqr.MqRqst.Read()
+	msg, err := mqr.MqResp.Read()
 	if err != nil {
 		return err
 	}
@@ -139,17 +136,16 @@ func (mqr *MqResponder) handleRequest(msgHandler ResponderCallback, lag int) err
 }
 
 func (mqr *MqResponder) CloseResponder() error {
-	mqr.MqRqst.Close()
 	mqr.MqResp.Close()
 	return nil
 }
 
 func (mqr *MqResponder) HasErrors() bool {
-	return mqr.ErrResp != nil || mqr.ErrRqst != nil
+	return mqr.ErrResp != nil
 }
 
 func (mqr *MqResponder) Error() error {
-	return fmt.Errorf("responder: %w\nrequester: %w", mqr.ErrResp, mqr.ErrRqst)
+	return fmt.Errorf(" %w\nrequester: %w", mqr.ErrResp)
 }
 
 func CloseResponder(mqr *MqResponder) error {

@@ -73,21 +73,12 @@ func requester(c chan int) {
 		log.Println("Requester: finished and closed")
 		c <- 0
 	}()
-
-	mqr.StartClient(&config)
-	mqs.StartClient(&config)
-	time.Sleep(5 * time.Second)
-
 	if mqs.HasErrors() {
 		log.Printf("Requester: could not initialize: %s", mqs.Error())
 		c <- 1
 		return
 	}
-	if mqr.HasErrors() {
-		log.Printf("Responder: could not initialize: %s", mqr.Error())
-		c <- 1
-		return
-	}
+	time.Sleep(5 * time.Second)
 
 	count := 0
 	for {
@@ -133,7 +124,7 @@ func requestUsingCmd(mqs *goq_responder.MqRequester, req *protos.Cmd, priority u
 
 func waitForCmdResponse(mqs *goq_responder.MqRequester, duration time.Duration) (*protos.CmdResp, uint, error) {
 	mqResp := &protos.CmdResp{}
-	_, prio, err := mqs.WaitForProto(mqResp, duration)
+	_, prio, err := mqs.WaitForProto(mqResp)
 	if err != nil {
 		return nil, 0, err
 	}

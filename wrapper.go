@@ -2,7 +2,9 @@ package goq_responder
 
 // QueueConfig is used to configure an instance of the message queue.
 type QueueConfig struct {
-	Name string
+	Name              string
+	UseEncryption     bool
+	UnmaskPermissions bool
 }
 
 const (
