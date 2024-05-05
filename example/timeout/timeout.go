@@ -14,14 +14,16 @@ const queue_name = "goqr_example_timeout"
 var mqr *goq_responder.MqResponder
 var mqs *goq_responder.MqRequester
 var config = goq_responder.QueueConfig{
-	Name: queue_name,
+	Name:             queue_name,
+	ClientTimeout:    0,
+	ClientRetryTimer: 0,
 }
 
 func main() {
 	resp_c := make(chan int)
 	go responder(resp_c)
 	//wait for the responder to create the posix_mq files
-	time.Sleep(1 * time.Second)
+	time.Sleep(time.Duration(goq_responder.GetDefaultClientConnectWait()) * time.Second)
 	request_c := make(chan int)
 	go requester(request_c)
 	<-resp_c
@@ -36,7 +38,6 @@ func main() {
 func responder(c chan int) {
 
 	mqr = goq_responder.NewResponder(&config)
-	time.Sleep(5 * time.Second)
 
 	defer func() {
 		log.Println("Responder: finished")
@@ -48,9 +49,11 @@ func responder(c chan int) {
 		return
 	}
 
+	time.Sleep(time.Duration(goq_responder.GetDefaultClientConnectWait()) * time.Second)
+
 	count := 0
 	for {
-		time.Sleep(1 * time.Second)
+		//time.Sleep(1 * time.Second)
 		count++
 		var err error
 		if count > 5 {
@@ -84,7 +87,7 @@ func requester(c chan int) {
 		c <- 1
 		return
 	}
-	time.Sleep(5 * time.Second)
+	time.Sleep(time.Duration(goq_responder.GetDefaultClientConnectWait()) * time.Second)
 
 	count := 0
 	ch := make(chan goqResponse)
@@ -97,7 +100,7 @@ func requester(c chan int) {
 			break
 		}
 
-		time.Sleep(1 * time.Second)
+		//time.Sleep(1 * time.Second)
 	}
 
 	result := make([]goqResponse, maxRequestTickNum)
