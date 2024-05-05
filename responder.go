@@ -83,7 +83,7 @@ func (mqr *MqResponder) HandleRequestFromProto(protocMsg proto.Message, msgHandl
 
 	if msg.MsgType < 1 {
 		mqr.Logger.Debugln("using recursion")
-		time.Sleep(REQUEST_REURSION_WAITTIME * time.Second)
+		time.Sleep(2 * time.Microsecond)
 		return mqr.HandleRequestFromProto(protocMsg, msgHandler)
 	} else {
 
@@ -124,7 +124,7 @@ func (mqr *MqResponder) handleRequest(msgHandler ResponderCallback, lag int) err
 	}
 	if msg.MsgType < 1 {
 		mqr.Logger.Debugln("using recursion")
-		time.Sleep(REQUEST_REURSION_WAITTIME * time.Second)
+		time.Sleep(2 * time.Microsecond)
 		return mqr.handleRequest(msgHandler, lag)
 	} else {
 		processed, err := msgHandler(msg.Data)
