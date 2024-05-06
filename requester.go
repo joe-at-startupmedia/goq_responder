@@ -64,11 +64,26 @@ func (mqs *MqRequester) RequestUsingProto(req *proto.Message, priority uint) err
 	return mqs.Request(data, priority)
 }
 
-func (mqs *MqRequester) WaitForResponse(duration time.Duration) ([]byte, uint, error) {
+func (mqs *MqRequester) WaitForResponse() ([]byte, uint, error) {
 	msg, err := mqs.MqRqst.Read()
 	if msg.MsgType < 1 {
 		time.Sleep(REQUEST_REURSION_WAITTIME * time.Second)
-		return mqs.WaitForResponse(duration)
+		return mqs.WaitForResponse()
+	} else {
+		return msg.Data, 0, err
+	}
+}
+
+func (mqs *MqRequester) WaitForResponseTimed(duration time.Duration) ([]byte, uint, error) {
+	msg, err := mqs.MqRqst.ReadTimed(duration, ipc.TimeoutMessage)
+	if err != nil {
+		return nil, 0, err
+	}
+	if msg.MsgType < 1 {
+		time.Sleep(REQUEST_REURSION_WAITTIME * time.Second)
+		return mqs.WaitForResponseTimed(duration)
+	} else if msg == ipc.TimeoutMessage {
+		return nil, 0, ipc.TimeoutMessage.Err
 	} else {
 		return msg.Data, 0, err
 	}
@@ -99,55 +114,22 @@ func (mqs *MqRequester) WaitForProto(pbm proto.Message) (*proto.Message, uint, e
 	}
 }
 
-// DO NOT USE: needs more testing and refectoring
 func (mqs *MqRequester) WaitForProtoTimed(pbm proto.Message, duration time.Duration) (*proto.Message, uint, error) {
 
-	msgChan := make(chan *ipc.Message)
-	errorChan := make(chan error)
-	stop := make(chan int)
+	msg, err := mqs.MqRqst.ReadTimed(duration, ipc.TimeoutMessage)
 
-	go func() {
-		for {
-			mqs.Logger.Debugln("block")
-			select {
-			case <-time.After(time.Second * 5):
-				mqs.Logger.Debugln("timed out")
-				err := fmt.Errorf("read operation timed out")
-				errorChan <- err
-			case <-stop:
-				mqs.Logger.Debugln("stopped")
-				return
-			}
-		}
-	}()
-
-	go func() {
-		msg, err := mqs.MqRqst.Read()
-		stop <- 1
-		if err != nil {
-			mqs.Logger.Debugf("WaitForProtoTimed error: %s", err)
-			errorChan <- err
-		} else {
-			msgChan <- msg
-		}
-	}()
-
-	select {
-
-	case err := <-errorChan:
-		mqs.Logger.Debugln("WaitForProtoTimed errChan Met")
+	if err != nil {
 		return nil, 0, err
-	case msg := <-msgChan:
-		mqs.Logger.Debugf("msg Met: %s", msg.Data)
-		if msg.MsgType < 1 {
-			time.Sleep(REQUEST_REURSION_WAITTIME * time.Second)
-			return mqs.WaitForProto(pbm)
-		} else {
-			err := proto.Unmarshal(msg.Data, pbm)
-			return &pbm, 0, err
-		}
 	}
-
+	if msg.MsgType < 1 {
+		time.Sleep(REQUEST_REURSION_WAITTIME * time.Second)
+		return mqs.WaitForProtoTimed(pbm, duration)
+	} else if msg == ipc.TimeoutMessage {
+		return &pbm, 0, ipc.TimeoutMessage.Err
+	} else {
+		err = proto.Unmarshal(msg.Data, pbm)
+		return &pbm, 0, err
+	}
 }
 
 func (mqs *MqRequester) CloseRequester() error {

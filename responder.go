@@ -151,7 +151,7 @@ func (mqr *MqResponder) HasErrors() bool {
 }
 
 func (mqr *MqResponder) Error() error {
-	return fmt.Errorf(" %w\nrequester: %w", mqr.ErrResp)
+	return fmt.Errorf("requester: %w", mqr.ErrResp)
 }
 
 func CloseResponder(mqr *MqResponder) error {
