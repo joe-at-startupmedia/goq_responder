@@ -26,9 +26,11 @@ func NewResponder(config *QueueConfig) *MqResponder {
 
 	logger := InitLogging(config.LogLevel)
 
-	responder, errResp := ipc.StartServer(fmt.Sprintf("%s", config.Name), &ipc.ServerConfig{
+	responder, errResp := ipc.StartServer(&ipc.ServerConfig{
+		Name:              config.Name,
 		UnmaskPermissions: config.ServerUnmaskPermissions,
 		LogLevel:          config.LogLevel,
+		Encryption:        false,
 	})
 
 	go func() {

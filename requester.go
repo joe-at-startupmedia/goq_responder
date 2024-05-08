@@ -19,10 +19,12 @@ func NewRequester(config *QueueConfig) *MqRequester {
 
 	logger := InitLogging(config.LogLevel)
 
-	requester, errRqst := ipc.StartClient(fmt.Sprintf("%s", config.Name), &ipc.ClientConfig{
+	requester, errRqst := ipc.StartClient(&ipc.ClientConfig{
+		Name:       config.Name,
 		LogLevel:   config.LogLevel,
 		RetryTimer: config.ClientRetryTimer,
 		Timeout:    config.ClientTimeout,
+		Encryption: false,
 	})
 
 	go func() {
