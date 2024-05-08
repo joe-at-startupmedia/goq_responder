@@ -1,7 +1,9 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	ipc "github.com/joe-at-startupmedia/golang-ipc"
 	"github.com/joe-at-startupmedia/goq_responder"
 	"log"
 	"time"
@@ -15,8 +17,8 @@ var mqr *goq_responder.MqResponder
 var mqs *goq_responder.MqRequester
 var config = goq_responder.QueueConfig{
 	Name:             queue_name,
-	ClientTimeout:    0,
-	ClientRetryTimer: 0,
+	ClientTimeout:    time.Duration(time.Second * 10),
+	ClientRetryTimer: time.Duration(time.Second * 1),
 }
 
 func main() {
@@ -40,8 +42,8 @@ func responder(c chan int) {
 	mqr = goq_responder.NewResponder(&config)
 
 	defer func() {
-		log.Println("Responder: finished")
 		c <- 0
+		log.Println("Responder: finished")
 	}()
 	if mqr.HasErrors() {
 		log.Printf("Responder: could not initialize: %s", mqr.Error())
@@ -79,8 +81,8 @@ func requester(c chan int) {
 
 	mqs = goq_responder.NewRequester(&config)
 	defer func() {
-		log.Println("Requester: finished and closed")
 		c <- 0
+		log.Println("Requester: finished and closed")
 	}()
 	if mqs.HasErrors() {
 		log.Printf("Requester: could not initialize: %s", mqs.Error())
@@ -90,7 +92,7 @@ func requester(c chan int) {
 	time.Sleep(time.Duration(goq_responder.GetDefaultClientConnectWait()) * time.Second)
 
 	count := 0
-	ch := make(chan goqResponse)
+	ch := make(chan goqResponse, 13)
 	for {
 		count++
 		request := fmt.Sprintf("Hello, World : %d\n", count)
@@ -99,8 +101,7 @@ func requester(c chan int) {
 		if count >= maxRequestTickNum {
 			break
 		}
-
-		//time.Sleep(1 * time.Second)
+		time.Sleep(1 * time.Second)
 	}
 
 	result := make([]goqResponse, maxRequestTickNum)
@@ -112,18 +113,30 @@ func requester(c chan int) {
 			log.Printf("Requester: Got error: %s \n", result[i].response)
 		}
 	}
+
 }
 
 func requestResponse(mqs *goq_responder.MqRequester, msg string, c chan goqResponse) {
-	if err := mqs.Request([]byte(msg), 0); err != nil {
-		c <- goqResponse{fmt.Sprintf("%s", err), false}
-		return
-	}
-	log.Printf("Requester: sent a new request: %s", msg)
 
-	resp, _, err := mqs.WaitForResponse(time.Second)
+	if len(msg) > 0 {
+		err := mqs.Request([]byte(msg), 0)
+		if err != nil {
+			c <- goqResponse{fmt.Sprintf("%s", err), false}
+			return
+		}
+		log.Printf("Requester: sent a new request: %s", msg)
+	}
+
+	resp, _, err := mqs.WaitForResponseTimed(time.Second * 5)
 
 	if err != nil {
+
+		if errors.Is(err, ipc.TimeoutMessage.Err) {
+			log.Printf("Requester: requestResponse timedout, using recursion")
+			go requestResponse(mqs, "", c)
+			return
+		}
+
 		c <- goqResponse{fmt.Sprintf("%s", err), false}
 		return
 	}
