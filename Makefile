@@ -12,6 +12,15 @@ build:
 	$(GO) build -o bin/protobuf example/protobuf/protobuf.go
 	$(GO) build -o bin/timeout example/timeout/timeout.go
 
+
+.PHONY: run
+run: 
+	$(GO) mod tidy
+	$(GO) run --race example/bytes/bytes.go
+	$(GO) run --race example/mqrequest/mqrequest.go
+	$(GO) run --race example/protobuf/protobuf.go
+	$(GO) run --race example/timeout/timeout.go
+
 .PHONY: test
 test: 
 	$(GO) test -v

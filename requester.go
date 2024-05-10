@@ -27,15 +27,17 @@ func NewRequester(config *QueueConfig) *MqRequester {
 		Encryption: false,
 	})
 
-	go func() {
-		msg, err := requester.Read()
-		if msg.MsgType < 1 {
-			logger.Debugf("MqRequest.StartClient status: %s", requester.Status())
-		}
-		if err != nil {
-			logger.Errorf("Request.StartClients err: %s", err)
-		}
-	}()
+	/*
+		go func() {
+			msg, err := requester.Read()
+			if msg.MsgType < 1 {
+				logger.Debugf("MqRequest.StartClient status: %s", requester.Status())
+			}
+			if err != nil {
+				logger.Errorf("Request.StartClients err: %s", err)
+			}
+		}()
+	*/
 
 	mqs := MqRequester{
 		requester,
@@ -69,7 +71,7 @@ func (mqs *MqRequester) RequestUsingProto(req *proto.Message, priority uint) err
 func (mqs *MqRequester) WaitForResponse() ([]byte, uint, error) {
 	msg, err := mqs.MqRqst.Read()
 	if msg.MsgType < 1 {
-		time.Sleep(REQUEST_REURSION_WAITTIME * time.Second)
+		time.Sleep(REQUEST_RECURSION_WAITTIME * time.Millisecond)
 		return mqs.WaitForResponse()
 	} else {
 		return msg.Data, 0, err
@@ -82,7 +84,7 @@ func (mqs *MqRequester) WaitForResponseTimed(duration time.Duration) ([]byte, ui
 		return nil, 0, err
 	}
 	if msg.MsgType < 1 {
-		time.Sleep(REQUEST_REURSION_WAITTIME * time.Second)
+		time.Sleep(REQUEST_RECURSION_WAITTIME * time.Millisecond)
 		return mqs.WaitForResponseTimed(duration)
 	} else if msg == ipc.TimeoutMessage {
 		return nil, 0, ipc.TimeoutMessage.Err
@@ -108,7 +110,7 @@ func (mqs *MqRequester) WaitForProto(pbm proto.Message) (*proto.Message, uint, e
 		return nil, 0, err
 	}
 	if msg.MsgType < 1 {
-		time.Sleep(REQUEST_REURSION_WAITTIME * time.Second)
+		time.Sleep(REQUEST_RECURSION_WAITTIME * time.Millisecond)
 		return mqs.WaitForProto(pbm)
 	} else {
 		err = proto.Unmarshal(msg.Data, pbm)
@@ -124,7 +126,7 @@ func (mqs *MqRequester) WaitForProtoTimed(pbm proto.Message, duration time.Durat
 		return nil, 0, err
 	}
 	if msg.MsgType < 1 {
-		time.Sleep(REQUEST_REURSION_WAITTIME * time.Second)
+		time.Sleep(REQUEST_RECURSION_WAITTIME * time.Millisecond)
 		return mqs.WaitForProtoTimed(pbm, duration)
 	} else if msg == ipc.TimeoutMessage {
 		return &pbm, 0, ipc.TimeoutMessage.Err

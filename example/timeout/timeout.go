@@ -25,7 +25,7 @@ func main() {
 	resp_c := make(chan int)
 	go responder(resp_c)
 	//wait for the responder to create the posix_mq files
-	time.Sleep(time.Duration(goq_responder.GetDefaultClientConnectWait()) * time.Second)
+	goq_responder.Sleep()
 	request_c := make(chan int)
 	go requester(request_c)
 	<-resp_c
@@ -34,7 +34,7 @@ func main() {
 	goq_responder.CloseResponder(mqr)
 	goq_responder.CloseRequester(mqs)
 	//gives time for deferred functions to complete
-	time.Sleep(2 * time.Second)
+	goq_responder.Sleep()
 }
 
 func responder(c chan int) {
@@ -51,7 +51,7 @@ func responder(c chan int) {
 		return
 	}
 
-	time.Sleep(time.Duration(goq_responder.GetDefaultClientConnectWait()) * time.Second)
+	goq_responder.Sleep()
 
 	count := 0
 	for {
@@ -89,7 +89,7 @@ func requester(c chan int) {
 		c <- 1
 		return
 	}
-	time.Sleep(time.Duration(goq_responder.GetDefaultClientConnectWait()) * time.Second)
+	goq_responder.Sleep()
 
 	count := 0
 	ch := make(chan goqResponse, 13)

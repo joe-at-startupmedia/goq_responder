@@ -33,15 +33,17 @@ func NewResponder(config *QueueConfig) *MqResponder {
 		Encryption:        false,
 	})
 
-	go func() {
-		msg, err := responder.Read()
-		if msg.MsgType == -1 {
-			logger.Debugf("MqResponder.StartClient status: %s", responder.Status())
-		}
-		if err != nil {
-			logger.Errorf("MqResponder.StartClient err: %s", err)
-		}
-	}()
+	/*
+		go func() {
+			msg, err := responder.Read()
+			if msg.MsgType == -1 {
+				logger.Debugf("MqResponder.StartClient status: %s", responder.Status())
+			}
+			if err != nil {
+				logger.Errorf("MqResponder.StartClient err: %s", err)
+			}
+		}()
+	*/
 
 	mqr := MqResponder{
 		responder,
@@ -102,7 +104,7 @@ func (mqr *MqResponder) HandleRequestFromProto(protocMsg proto.Message, msgHandl
 		err = mqr.MqResp.Write(DEFAULT_MSG_TYPE, processed)
 		if err != nil && err.Error() == "Connecting" {
 			mqr.Logger.Infoln("Connecting error, reattempting")
-			time.Sleep(REQUEST_REURSION_WAITTIME * time.Second)
+			time.Sleep(REQUEST_RECURSION_WAITTIME * time.Second)
 			return mqr.MqResp.Write(DEFAULT_MSG_TYPE, processed)
 		} else {
 			return err
