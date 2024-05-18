@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/joe-at-startupmedia/goq_responder"
 	"log"
-	"time"
 )
 
 const maxRequestTickNum = 10
@@ -52,7 +51,6 @@ func responder(c chan int) {
 
 	count := 0
 	for {
-		//time.Sleep(1 * time.Second)
 		count++
 		if err := mqr.HandleMqRequest(requestProcessor); err != nil {
 			log.Printf("Responder: error handling request: %s\n", err)
@@ -86,14 +84,14 @@ func requester(c chan int) {
 		request := fmt.Sprintf("Hello, World : %d\n", count)
 		if err := mqs.RequestUsingMqRequest(&goq_responder.MqRequest{
 			Arg1: request,
-		}, 0); err != nil {
+		}); err != nil {
 			log.Printf("Requester: error requesting request: %s\n", err)
 			continue
 		}
 
 		log.Printf("Requester: sent a new request: %s", request)
 
-		msg, _, err := mqs.WaitForMqResponse(time.Second)
+		msg, err := mqs.WaitForMqResponse()
 
 		if err != nil {
 			log.Printf("Requester: error getting response: %s\n", err)
@@ -106,8 +104,6 @@ func requester(c chan int) {
 		if count >= maxRequestTickNum {
 			break
 		}
-
-		//time.Sleep(1 * time.Second)
 	}
 }
 

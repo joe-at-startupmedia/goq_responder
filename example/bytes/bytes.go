@@ -50,8 +50,6 @@ func responder(c chan int) {
 
 	count := 0
 	for {
-
-		//time.Sleep(1 * time.Second)
 		count++
 
 		if err := mqr.HandleRequest(handleMessage); err != nil {
@@ -89,14 +87,14 @@ func requester(c chan int) {
 		count++
 
 		request := fmt.Sprintf("Hello, World : %d\n", count)
-		if err := mqs.Request([]byte(request), 0); err != nil {
+		if err := mqs.Request([]byte(request)); err != nil {
 			log.Printf("Requester: error requesting request: %s\n", err)
 			continue
 		}
 
 		log.Printf("Requester: sent a new request: %s", request)
 
-		msg, _, err := mqs.WaitForResponse()
+		msg, err := mqs.WaitForResponse()
 
 		if err != nil {
 			log.Printf("Requester: error getting response: %s\n", err)
@@ -104,8 +102,6 @@ func requester(c chan int) {
 		}
 
 		log.Printf("Requester: got a response: %s\n", msg)
-
-		//time.Sleep(1 * time.Second)
 
 		if count >= maxRequestTickNum {
 			break

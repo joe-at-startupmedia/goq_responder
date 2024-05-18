@@ -33,18 +33,6 @@ func NewResponder(config *QueueConfig) *MqResponder {
 		Encryption:        false,
 	})
 
-	/*
-		go func() {
-			msg, err := responder.Read()
-			if msg.MsgType == -1 {
-				logger.Debugf("MqResponder.StartClient status: %s", responder.Status())
-			}
-			if err != nil {
-				logger.Errorf("MqResponder.StartClient err: %s", err)
-			}
-		}()
-	*/
-
 	mqr := MqResponder{
 		responder,
 		errResp,

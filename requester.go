@@ -27,18 +27,6 @@ func NewRequester(config *QueueConfig) *MqRequester {
 		Encryption: false,
 	})
 
-	/*
-		go func() {
-			msg, err := requester.Read()
-			if msg.MsgType < 1 {
-				logger.Debugf("MqRequest.StartClient status: %s", requester.Status())
-			}
-			if err != nil {
-				logger.Errorf("Request.StartClients err: %s", err)
-			}
-		}()
-	*/
-
 	mqs := MqRequester{
 		requester,
 		errRqst,
@@ -48,91 +36,91 @@ func NewRequester(config *QueueConfig) *MqRequester {
 	return &mqs
 }
 
-func (mqs *MqRequester) Request(data []byte, priority uint) error {
+func (mqs *MqRequester) Request(data []byte) error {
 	return mqs.MqRqst.Write(DEFAULT_MSG_TYPE, data)
 }
 
-func (mqs *MqRequester) RequestUsingMqRequest(req *MqRequest, priority uint) error {
+func (mqs *MqRequester) RequestUsingMqRequest(req *MqRequest) error {
 	if !req.HasId() {
 		req.SetId()
 	}
 	pbm := proto.Message(req.AsProtobuf())
-	return mqs.RequestUsingProto(&pbm, priority)
+	return mqs.RequestUsingProto(&pbm)
 }
 
-func (mqs *MqRequester) RequestUsingProto(req *proto.Message, priority uint) error {
+func (mqs *MqRequester) RequestUsingProto(req *proto.Message) error {
 	data, err := proto.Marshal(*req)
 	if err != nil {
 		return fmt.Errorf("marshaling error: %w", err)
 	}
-	return mqs.Request(data, priority)
+	return mqs.Request(data)
 }
 
-func (mqs *MqRequester) WaitForResponse() ([]byte, uint, error) {
+func (mqs *MqRequester) WaitForResponse() ([]byte, error) {
 	msg, err := mqs.MqRqst.Read()
 	if msg.MsgType < 1 {
 		time.Sleep(REQUEST_RECURSION_WAITTIME * time.Millisecond)
 		return mqs.WaitForResponse()
 	} else {
-		return msg.Data, 0, err
+		return msg.Data, err
 	}
 }
 
-func (mqs *MqRequester) WaitForResponseTimed(duration time.Duration) ([]byte, uint, error) {
-	msg, err := mqs.MqRqst.ReadTimed(duration, ipc.TimeoutMessage)
+func (mqs *MqRequester) WaitForResponseTimed(duration time.Duration) ([]byte, error) {
+	msg, err := mqs.MqRqst.ReadTimed(duration)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	if msg.MsgType < 1 {
 		time.Sleep(REQUEST_RECURSION_WAITTIME * time.Millisecond)
 		return mqs.WaitForResponseTimed(duration)
 	} else if msg == ipc.TimeoutMessage {
-		return nil, 0, ipc.TimeoutMessage.Err
+		return nil, ipc.TimeoutMessage.Err
 	} else {
-		return msg.Data, 0, err
+		return msg.Data, err
 	}
 }
 
-func (mqs *MqRequester) WaitForMqResponse(duration time.Duration) (*MqResponse, uint, error) {
+func (mqs *MqRequester) WaitForMqResponse() (*MqResponse, error) {
 	mqResp := &protos.Response{}
-	_, prio, err := mqs.WaitForProto(mqResp)
+	_, err := mqs.WaitForProto(mqResp)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
-	return ProtoResponseToMqResponse(mqResp), prio, err
+	return ProtoResponseToMqResponse(mqResp), err
 }
 
-func (mqs *MqRequester) WaitForProto(pbm proto.Message) (*proto.Message, uint, error) {
+func (mqs *MqRequester) WaitForProto(pbm proto.Message) (*proto.Message, error) {
 
 	msg, err := mqs.MqRqst.Read()
 
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	if msg.MsgType < 1 {
 		time.Sleep(REQUEST_RECURSION_WAITTIME * time.Millisecond)
 		return mqs.WaitForProto(pbm)
 	} else {
 		err = proto.Unmarshal(msg.Data, pbm)
-		return &pbm, 0, err
+		return &pbm, err
 	}
 }
 
-func (mqs *MqRequester) WaitForProtoTimed(pbm proto.Message, duration time.Duration) (*proto.Message, uint, error) {
+func (mqs *MqRequester) WaitForProtoTimed(pbm proto.Message, duration time.Duration) (*proto.Message, error) {
 
-	msg, err := mqs.MqRqst.ReadTimed(duration, ipc.TimeoutMessage)
+	msg, err := mqs.MqRqst.ReadTimed(duration)
 
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	if msg.MsgType < 1 {
 		time.Sleep(REQUEST_RECURSION_WAITTIME * time.Millisecond)
 		return mqs.WaitForProtoTimed(pbm, duration)
 	} else if msg == ipc.TimeoutMessage {
-		return &pbm, 0, ipc.TimeoutMessage.Err
+		return &pbm, ipc.TimeoutMessage.Err
 	} else {
 		err = proto.Unmarshal(msg.Data, pbm)
-		return &pbm, 0, err
+		return &pbm, err
 	}
 }
 

@@ -17,8 +17,8 @@ var mqr *goq_responder.MqResponder
 var mqs *goq_responder.MqRequester
 var config = goq_responder.QueueConfig{
 	Name:             queue_name,
-	ClientTimeout:    time.Duration(time.Second * 10),
-	ClientRetryTimer: time.Duration(time.Second * 1),
+	ClientTimeout:    time.Second * 10,
+	ClientRetryTimer: time.Second * 1,
 }
 
 func main() {
@@ -119,7 +119,7 @@ func requester(c chan int) {
 func requestResponse(mqs *goq_responder.MqRequester, msg string, c chan goqResponse) {
 
 	if len(msg) > 0 {
-		err := mqs.Request([]byte(msg), 0)
+		err := mqs.Request([]byte(msg))
 		if err != nil {
 			c <- goqResponse{fmt.Sprintf("%s", err), false}
 			return
@@ -127,7 +127,7 @@ func requestResponse(mqs *goq_responder.MqRequester, msg string, c chan goqRespo
 		log.Printf("Requester: sent a new request: %s", msg)
 	}
 
-	resp, _, err := mqs.WaitForResponseTimed(time.Second * 5)
+	resp, err := mqs.WaitForResponseTimed(time.Second * 5)
 
 	if err != nil {
 

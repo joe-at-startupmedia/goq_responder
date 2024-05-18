@@ -7,7 +7,6 @@ import (
 	"github.com/joe-at-startupmedia/goq_responder/example/protobuf/protos"
 	"google.golang.org/protobuf/proto"
 	"log"
-	"time"
 )
 
 const maxRequestTickNum = 10
@@ -55,7 +54,6 @@ func responder(c chan int) {
 
 	count := 0
 	for {
-		//time.Sleep(1 * time.Second)
 		count++
 		if err := handleCmdRequest(mqr); err != nil {
 			log.Printf("Responder: error handling request: %s\n", err)
@@ -93,14 +91,14 @@ func requester(c chan int) {
 				User: "nonroot",
 			},
 		}
-		if err := requestUsingCmd(mqs, cmd, 0); err != nil {
+		if err := requestUsingCmd(mqs, cmd); err != nil {
 			log.Printf("Requester: error requesting request: %s\n", err)
 			continue
 		}
 
 		log.Printf("Requester: sent a new request: %s \n", cmd.String())
 
-		cmdResp, _, err := waitForCmdResponse(mqs, time.Second)
+		cmdResp, err := waitForCmdResponse(mqs)
 
 		if err != nil {
 			log.Printf("Requester: error getting response: %s\n", err)
@@ -112,26 +110,24 @@ func requester(c chan int) {
 		if count >= maxRequestTickNum {
 			break
 		}
-
-		//time.Sleep(1 * time.Second)
 	}
 }
 
-func requestUsingCmd(mqs *goq_responder.MqRequester, req *protos.Cmd, priority uint) error {
+func requestUsingCmd(mqs *goq_responder.MqRequester, req *protos.Cmd) error {
 	if len(req.Id) == 0 {
 		req.Id = uuid.NewString()
 	}
 	pbm := proto.Message(req)
-	return mqs.RequestUsingProto(&pbm, priority)
+	return mqs.RequestUsingProto(&pbm)
 }
 
-func waitForCmdResponse(mqs *goq_responder.MqRequester, duration time.Duration) (*protos.CmdResp, uint, error) {
+func waitForCmdResponse(mqs *goq_responder.MqRequester) (*protos.CmdResp, error) {
 	mqResp := &protos.CmdResp{}
-	_, prio, err := mqs.WaitForProto(mqResp)
+	_, err := mqs.WaitForProto(mqResp)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
-	return mqResp, prio, err
+	return mqResp, err
 }
 
 // handleCmdRequest provides a concrete implementation of HandleRequestFromProto using the local Cmd protobuf type
